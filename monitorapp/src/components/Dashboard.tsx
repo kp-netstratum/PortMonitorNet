@@ -1,0 +1,196 @@
+import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import api from "../../api/api";
+
+type UploadResponse = {
+  filename: string;
+  file_size: number;
+  analysis: unknown;
+};
+
+interface DashboardProps {
+  onUploaded: (result: UploadResponse) => void;
+}
+
+function Dashboard({ onUploaded }: DashboardProps) {
+  const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<UploadResponse | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const navigate = useNavigate();
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setResult(null);
+    if (!file) return;
+
+    try {
+      setIsUploading(true);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await api.post<UploadResponse>("/upload", formData, {
+        // baseUrl defaults to VITE_API_BASE_URL in the api helper
+        headers: {}, // do not set Content-Type for FormData
+      });
+      setResult(res);
+      onUploaded(res);
+      navigate("/table");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Upload failed";
+      setError(message);
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files?.[0] ?? null;
+    setFile(selected);
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragging) setIsDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const droppedFile = e.dataTransfer.files?.[0] ?? null;
+    if (droppedFile) setFile(droppedFile);
+  }
+
+  function handleBrowseClick() {
+    inputRef.current?.click();
+  }
+
+  console.log(result, 'qwerty')
+
+  const containerStyle: React.CSSProperties = {
+    maxWidth: 760,
+    margin: "40px auto",
+    padding: 24,
+    borderRadius: 12,
+    border: "1px solid #e5e7eb",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
+    background: "#fff",
+  };
+
+  const titleStyle: React.CSSProperties = {
+    margin: 0,
+    marginBottom: 16,
+    fontSize: 22,
+    fontWeight: 700,
+    color: "#111827",
+  };
+
+  const subtitleStyle: React.CSSProperties = {
+    margin: 0,
+    marginBottom: 20,
+    color: "#6b7280",
+  };
+
+  const dropzoneStyle: React.CSSProperties = {
+    position: "relative",
+    border: isDragging ? "2px dashed #2563eb" : "2px dashed #cdd5df",
+    background: isDragging ? "#eff6ff" : "#f9fafb",
+    color: "#374151",
+    borderRadius: 12,
+    padding: 28,
+    textAlign: "center" as const,
+    transition: "all 0.15s ease-in-out",
+    cursor: "pointer",
+  };
+
+  const helperTextStyle: React.CSSProperties = {
+    marginTop: 8,
+    fontSize: 12,
+    color: "#6b7280",
+  };
+
+  const buttonStyle: React.CSSProperties = {
+    marginTop: 16,
+    padding: "10px 16px",
+    background: isUploading ? "#93c5fd" : "#2563eb",
+    color: "#fff",
+    border: 0,
+    borderRadius: 8,
+    fontWeight: 600,
+    cursor: isUploading ? "not-allowed" : "pointer",
+  };
+
+  const metaStyle: React.CSSProperties = {
+    marginTop: 16,
+    padding: 12,
+    background: "#f3f4f6",
+    borderRadius: 8,
+    fontSize: 14,
+  };
+
+  return (
+    <div style={containerStyle}>
+      <h2 style={titleStyle}>Upload PCAP</h2>
+      <p style={subtitleStyle}>Drag and drop a file below, or click to browse.</p>
+      <form onSubmit={handleSubmit}>
+        <input
+          ref={inputRef}
+          type="file"
+          onChange={handleFileChange}
+          style={{ display: "none" }}
+        />
+        <div
+          onClick={handleBrowseClick}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          style={dropzoneStyle}
+        >
+          <div>
+            {file ? (
+              <>
+                <div style={{ fontWeight: 600 }}>{file.name}</div>
+                <div style={helperTextStyle}>Ready to upload</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontWeight: 600 }}>Drop your file here</div>
+                <div style={helperTextStyle}>or click to browse</div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <button type="submit" disabled={!file || isUploading} style={buttonStyle}>
+          {isUploading ? "Uploading..." : "Upload & Analyze"}
+        </button>
+      </form>
+
+      {error && <p style={{ color: "#b91c1c", marginTop: 12 }}>{error}</p>}
+
+      {result && (
+        <div style={metaStyle}>
+          <div>
+            <strong>Uploaded:</strong> {result.filename}
+          </div>
+          <div>
+            <strong>Size:</strong> {result.file_size} bytes
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default Dashboard;
