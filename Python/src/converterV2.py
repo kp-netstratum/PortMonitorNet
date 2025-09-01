@@ -354,12 +354,14 @@
 #         raise RuntimeError(f"PCAP analysis failed: {str(e)}")
 
 
-from scapy.all import rdpcap, IP, TCP, UDP
+from scapy.all import rdpcap, Ether, IP, TCP, UDP, Raw, DNS, ARP
 from collections import defaultdict, Counter
 from typing import Dict, List, Any
 from datetime import datetime
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import binascii
+
 
 executor = ThreadPoolExecutor(max_workers=4)
 
@@ -406,6 +408,7 @@ class PCAPAnalyzer:
                 
                 # Time range
                 try:
+                    # Convert to float to ensure JSON serializable
                     timestamp = float(packet.time)
                     if stats["time_range"]["start"] is None:
                         stats["time_range"]["start"] = timestamp
@@ -413,7 +416,7 @@ class PCAPAnalyzer:
                     else:
                         stats["time_range"]["start"] = min(stats["time_range"]["start"], timestamp)
                         stats["time_range"]["end"] = max(stats["time_range"]["end"], timestamp)
-                except (AttributeError, ValueError):
+                except (AttributeError, ValueError, TypeError):
                     pass
                 
                 # Protocol analysis
@@ -494,8 +497,9 @@ class PCAPAnalyzer:
                     
                     # Get timestamp safely
                     try:
+                        # Convert to float to ensure JSON serializable
                         timestamp = float(packet.time)
-                    except (AttributeError, ValueError):
+                    except (AttributeError, ValueError, TypeError):
                         continue  # Skip packets without timestamps
                     
                     # Create conversation key (sorted IPs for bidirectional flows)
@@ -568,8 +572,9 @@ class PCAPAnalyzer:
                 # Large packets (> 1500 bytes)
                 if packet_size > 1500:
                     try:
+                        # Convert to float to ensure JSON serializable
                         timestamp = float(packet.time)
-                    except (AttributeError, ValueError):
+                    except (AttributeError, ValueError, TypeError):
                         timestamp = 0
                     
                     src_ip = "Unknown"
@@ -664,6 +669,7 @@ class PCAPAnalyzer:
             return rows
 
         try:
+            # Convert to float to ensure JSON serializable
             first_time = float(self.packets[0].time)
         except Exception:
             first_time = None
@@ -672,6 +678,7 @@ class PCAPAnalyzer:
             for index, packet in enumerate(self.packets, start=1):
                 # Time (relative if possible) and absolute timestamp
                 try:
+                    # Convert to float to ensure JSON serializable
                     pkt_time = float(packet.time)
                     if first_time is not None:
                         rel_time = round(pkt_time - first_time, 6)
@@ -772,6 +779,119 @@ class PCAPAnalyzer:
 
         return rows
 
+    def wireshark_analysis(self, pathUrl):
+        print(pathUrl)
+        packets = rdpcap(str(pathUrl))
+        print(packets)
+        packet_list = []
+        first_time = float(packets[0].time)
+        for i, pkt in enumerate(packets, start=1):
+            print(pkt)
+            pkt_info = {
+                "no": i,
+                "timestamp": round(float(pkt.time) - first_time, 6),  # ✅ Wireshark-style,  # Convert to float for JSON serialization
+                "length": len(pkt),
+                "protocol": "",   # ✅ Add protocol field
+                "info": "",
+                "packet": {},
+                "raw": {
+                    "hex": binascii.hexlify(bytes(pkt)).decode(),
+                    "ascii": "".join([chr(b) if 32 <= b <= 126 else "." for b in bytes(pkt)])
+                }
+            }
+
+            if pkt.haslayer(Ether):
+                eth = pkt[Ether]
+                pkt_info["packet"]["ethernet"] = {
+                    "src_mac": eth.src,
+                    "dst_mac": eth.dst,
+                    "type": eth.type
+                }
+
+            # ✅ Handle ARP
+            if pkt.haslayer(ARP):
+                arp = pkt[ARP]
+                pkt_info["protocol"] = "ARP"
+                pkt_info["packet"]["arp"] = {
+                    "hwtype": arp.hwtype,
+                    "ptype": arp.ptype,
+                    "hwlen": arp.hwlen,
+                    "plen": arp.plen,
+                    "op": arp.op,
+                    "src_mac": arp.hwsrc,
+                    "src_ip": arp.psrc,
+                    "dst_mac": arp.hwdst,
+                    "dst_ip": arp.pdst
+                }
+                if arp.op == 1:  # Request
+                    pkt_info["info"] = f"Who has {arp.pdst}? Tell {arp.psrc}"
+                elif arp.op == 2:  # Reply
+                    pkt_info["info"] = f"{arp.psrc} is at {arp.hwsrc}"
+                packet_list.append(pkt_info)
+                continue  # ✅ Skip IP/TCP/UDP parsing for ARP packets
+
+            if pkt.haslayer(IP):
+                ip = pkt[IP]
+                pkt_info["packet"]["ip"] = {
+                    "src_ip": ip.src,
+                    "dst_ip": ip.dst,
+                    "protocol": ip.proto,
+                    "ttl": ip.ttl,
+                    "header_length": ip.ihl
+                }
+
+            if pkt.haslayer(TCP):
+                tcp = pkt[TCP]
+                pkt_info["protocol"] = "TCP"
+                pkt_info["packet"]["tcp"] = {
+                    "src_port": tcp.sport,
+                    "dst_port": tcp.dport,
+                    "flags": str(tcp.flags),
+                    "seq": tcp.seq,
+                    "ack": tcp.ack,
+                    "window": tcp.window
+                }
+                pkt_info["info"] = f"TCP {tcp.sport} → {tcp.dport} Flags={tcp.flags}"
+
+                if pkt.haslayer(Raw):
+                    try:
+                        data = pkt[Raw].load.decode(errors="ignore")
+                        if "HTTP" in data or "GET" in data or "POST" in data:
+                            pkt_info["packet"]["application"] = {
+                                "protocol": "HTTP",
+                                "info": data.split("\r\n")[0]
+                            }
+                            pkt_info["protocol"] = "HTTP"
+                            pkt_info["info"] = pkt_info["packet"]["application"]["info"]
+                    except Exception:
+                        pass
+
+            if pkt.haslayer(UDP):
+                udp = pkt[UDP]
+                pkt_info["protocol"] = "UDP"
+                pkt_info["packet"]["udp"] = {
+                    "src_port": udp.sport,
+                    "dst_port": udp.dport,
+                    "length": udp.len
+                }
+                pkt_info["info"] = f"UDP {udp.sport} → {udp.dport}"
+
+                if pkt.haslayer(DNS):
+                    dns = pkt[DNS]
+                    if dns.qr == 0 and dns.qd is not None:
+                        pkt_info["packet"]["application"] = {
+                            "protocol": "DNS",
+                            "query": dns.qd.qname.decode(),
+                            "query_type": dns.qd.qtype
+                        }
+                        pkt_info["protocol"] = "DNS"
+                        pkt_info["info"] = f"DNS Query {dns.qd.qname.decode()}"
+
+            packet_list.append(pkt_info)
+    
+        return packet_list
+
+
 # Synchronous analysis function using Scapy
 def analyze_pcap_sync(pcap_file_path: str) -> Dict[str, Any]:
     """Synchronous PCAP analysis using Scapy"""
@@ -781,21 +901,42 @@ def analyze_pcap_sync(pcap_file_path: str) -> Dict[str, Any]:
         conversations = analyzer.get_conversations()
         suspicious = analyzer.get_suspicious_activity()
         alldata = analyzer.get_packet_table_rows()
-        
+        wireshark_data = analyzer.wireshark_analysis(pcap_file_path)
+
         return {
             "basic_stats": basic_stats,
             "conversations": conversations,
             "suspicious_activity": suspicious,
-            "data": alldata
+            "data": alldata,
+            "wireshark": wireshark_data
         }
     except Exception as e:
         raise RuntimeError(f"Analysis failed: {str(e)}")
+
+def ensure_json_serializable(obj):
+    """Recursively convert objects to JSON serializable types"""
+    if isinstance(obj, dict):
+        return {k: ensure_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [ensure_json_serializable(item) for item in obj]
+    elif hasattr(obj, 'isoformat'):  # datetime objects
+        return obj.isoformat()
+    elif hasattr(obj, '__float__'):  # EDecimal and similar
+        try:
+            return float(obj)
+        except (ValueError, TypeError):
+            return str(obj)
+    elif hasattr(obj, '__str__') and not isinstance(obj, (str, int, float, bool, type(None))):
+        return str(obj)
+    else:
+        return obj
 
 # Async wrapper for FastAPI
 async def pysharkAnalysis(pcap_file_path: str) -> Dict[str, Any]:
     """Analyze PCAP file - async wrapper around Scapy analysis"""
     def _analyze():
-        return analyze_pcap_sync(pcap_file_path)
+        result = analyze_pcap_sync(pcap_file_path)
+        return ensure_json_serializable(result)
     
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(executor, _analyze)

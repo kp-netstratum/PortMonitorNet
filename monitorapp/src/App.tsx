@@ -4,6 +4,7 @@ import Dashboard from './components/Dashboard'
 import Analysis from './components/Analysis';
 import { useState } from 'react';
 import Table from './components/Table';
+import WiresharkMain from './components/WiresharkMain';
 
 
 function App() {
@@ -29,6 +30,10 @@ function App() {
         <Route
           path='/table'
           element={<Table data={uploadResult?.analysis ?? null} />}
+        />
+        <Route
+          path='/wireshark'
+          element={<WiresharkMain data={uploadResult?.analysis ?? null} />}
         />
       </Routes>
     </BrowserRouter>

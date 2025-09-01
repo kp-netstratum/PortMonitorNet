@@ -6,6 +6,7 @@ import tempfile
 from fastapi.responses import JSONResponse
 
 from src.converterV2 import pysharkAnalysis
+from src.wireshark import wireshark_analysis
 
 app = FastAPI()
 
@@ -61,11 +62,13 @@ async def upload_pcap(file: UploadFile = File(...)):
 
         # Analyze the file
         analysis_result = await pysharkAnalysis(temp_path)
+        # wireshark_result = wireshark_analysis(str(temp_path))
         
         return JSONResponse(content={
             "filename": file.filename,
             "file_size": len(data),
-            "analysis": analysis_result
+            "analysis": analysis_result,
+            # "wireshark": wireshark_result
         })
     
     except Exception as e:
