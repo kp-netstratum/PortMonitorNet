@@ -8,6 +8,7 @@ type UploadResponse = {
   filename: string;
   file_size: number;
   analysis: any;
+  pagination:any;
 };
 
 export default function WiresharkMain({ data, fileData, setFileData }: any) {
@@ -15,6 +16,7 @@ export default function WiresharkMain({ data, fileData, setFileData }: any) {
   const [selectedPacket, setSelectedPacket] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(20);
+  const [totalPages, setTotalPages] = useState<number>(0);
 
   const fetchPackets = async (
     page: number = 1,
@@ -34,7 +36,7 @@ export default function WiresharkMain({ data, fileData, setFileData }: any) {
   };
 
   const decrementPage = async () => {
-    if (currentPage > 1) {
+    if (currentPage > 1) {      
       const nextPage = currentPage - 1;
       setCurrentPage(nextPage);
       const formData = new FormData();
@@ -45,7 +47,9 @@ export default function WiresharkMain({ data, fileData, setFileData }: any) {
   };
 
   const incrementPage = async () => {
-    if (currentPage < data.pagination.total_pages) {
+    console.log(totalPages, currentPage);
+    
+    if (currentPage < totalPages) {
       const nextPage = currentPage + 1;
       setCurrentPage(nextPage);
       const formData = new FormData();
@@ -60,12 +64,15 @@ export default function WiresharkMain({ data, fileData, setFileData }: any) {
     const formData = new FormData();
     formData.append("file", fileData);
     const dat = await fetchPackets(currentPage, size, formData);
+    console.log(dat.pagination.total_pages)
+    setTotalPages(dat.pagination.total_pages)
     setPackets(dat.analysis);
   }
 
   useEffect(() => {
     console.log(packets);
     const paginationData = data.pagination;
+    setTotalPages(data.pagination.total_pages)
     setCurrentPage(paginationData.page);
   }, []);
 

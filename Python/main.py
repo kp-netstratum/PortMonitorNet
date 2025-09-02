@@ -310,7 +310,7 @@ async def upload_pcap(
         
         frames = all_packets['frames']
         # Pagination on packets
-        total_items = len(all_packets)
+        total_items = len(frames)
         total_pages = (total_items + page_size - 1) // page_size if total_items > 0 else 1
         start = (page - 1) * page_size
         end = start + page_size
