@@ -1,5 +1,5 @@
 interface PacketBytesProps {
-    raw: { hex: string; ascii: string };
+    raw: { hex_formatted: string; ascii: string };
   }
   
   export default function PacketBytes({ raw }: PacketBytesProps) {
