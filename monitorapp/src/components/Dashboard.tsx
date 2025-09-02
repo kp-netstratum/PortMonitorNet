@@ -10,9 +10,11 @@ type UploadResponse = {
 
 interface DashboardProps {
   onUploaded: (result: UploadResponse) => void;
+  fileData: any; // replace `any` with the actual file type if you know it
+  setFileData: React.Dispatch<React.SetStateAction<any>>;
 }
 
-function Dashboard({ onUploaded }: DashboardProps) {
+function Dashboard({ onUploaded, fileData, setFileData }: DashboardProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,23 +23,35 @@ function Dashboard({ onUploaded }: DashboardProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const navigate = useNavigate();
 
+  const fetchPackets = async (
+    page: number = 1,
+    pageSize: number = 20,
+    data: any
+  ) => {
+    // `http://localhost:8000/upload?page=${page}&page_size=${pageSize}`
+    const res = await api.post<UploadResponse>(
+      `/upload?page=${page}&page_size=${pageSize}`,
+      data,
+      {
+        // baseUrl defaults to VITE_API_BASE_URL in the api helper
+        headers: {}, // do not set Content-Type for FormData
+      }
+    );
+    setResult(res);
+    onUploaded(res);
+  };
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setResult(null);
     if (!file) return;
-
+    setFileData(file)
     try {
       setIsUploading(true);
       const formData = new FormData();
       formData.append("file", file);
-
-      const res = await api.post<UploadResponse>("/upload", formData, {
-        // baseUrl defaults to VITE_API_BASE_URL in the api helper
-        headers: {}, // do not set Content-Type for FormData
-      });
-      setResult(res);
-      onUploaded(res);
+      await fetchPackets(1, 20, formData);
       navigate("/wireshark");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Upload failed";
@@ -142,7 +156,9 @@ function Dashboard({ onUploaded }: DashboardProps) {
     <div className="h-[100vh] bg-gray-900 flex flex-col justify-center items-center">
       <div className="bg-gray-800 w-[60%] p-12 rounded-xl border-gray-700 border">
         <h2 className="text-2xl font-bold text-white">Upload PCAP</h2>
-        <p className="text-xl text-white mb-5">Drag and drop a file below, or click to browse.</p>
+        <p className="text-xl text-white mb-5">
+          Drag and drop a file below, or click to browse.
+        </p>
         <form onSubmit={handleSubmit}>
           <input
             ref={inputRef}

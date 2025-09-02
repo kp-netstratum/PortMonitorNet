@@ -897,19 +897,20 @@ def analyze_pcap_sync(pcap_file_path: str) -> Dict[str, Any]:
     """Synchronous PCAP analysis using Scapy"""
     analyzer = PCAPAnalyzer(pcap_file_path)
     try:
-        basic_stats = analyzer.get_basic_stats()
-        conversations = analyzer.get_conversations()
-        suspicious = analyzer.get_suspicious_activity()
-        alldata = analyzer.get_packet_table_rows()
+        # basic_stats = analyzer.get_basic_stats()
+        # conversations = analyzer.get_conversations()
+        # suspicious = analyzer.get_suspicious_activity()
+        # alldata = analyzer.get_packet_table_rows()
         wireshark_data = analyzer.wireshark_analysis(pcap_file_path)
 
-        return {
-            "basic_stats": basic_stats,
-            "conversations": conversations,
-            "suspicious_activity": suspicious,
-            "data": alldata,
-            "wireshark": wireshark_data
-        }
+        # return {
+        #     "basic_stats": basic_stats,
+        #     "conversations": conversations,
+        #     "suspicious_activity": suspicious,
+        #     "data": alldata,
+        #     "wireshark": wireshark_data
+        # }
+        return wireshark_data
     except Exception as e:
         raise RuntimeError(f"Analysis failed: {str(e)}")
 
